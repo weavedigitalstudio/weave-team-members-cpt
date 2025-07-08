@@ -359,7 +359,7 @@
 									   createElement('img', {
 										   src: attributes.featuredImageUrl,
 										   alt: 'Team Member',
-										   style: { maxWidth: '100%', height: 'auto' }
+										   style: { maxWidth: '500px', height: 'auto' }
 									   }),
 									   createElement(
 										   'div',
