@@ -3,7 +3,7 @@
  * 
  * @package    Weave_Digital
  * @subpackage Team_Module
- * @version    1.0.1
+ * @version    1.0.2
  */
 
 /**
@@ -56,6 +56,8 @@
 				 return select('core/editor').getCurrentPostId();
 			 }, []);
 			 
+
+			 
 			 // Get editPost function
 			 var { editPost } = useDispatch('core/editor');
 			 
@@ -90,26 +92,46 @@
 			 
 			 function updateLocation(value) {
 				 setAttributes({ selectedLocation: value });
-				 if (postId && value) {
-					 // This will need server-side handling for taxonomy terms
-					 editPost({ meta: { '_weave_team_location': value } });
+				 
+				 // Immediately sync with WordPress taxonomies for new posts
+				 var dispatch = wp.data.dispatch('core/editor');
+				 if (dispatch && dispatch.editPost) {
+					 var currentTerms = value ? [parseInt(value)] : [];
+					 dispatch.editPost({
+						 weave_team_location: currentTerms
+					 });
 				 }
 			 }
 			 
 			 function updateRole(value) {
 				 setAttributes({ selectedRole: value });
-				 if (postId && value) {
-					 // This will need server-side handling for taxonomy terms
-					 editPost({ meta: { '_weave_team_role': value } });
+				 
+				 // Immediately sync with WordPress taxonomies for new posts
+				 var dispatch = wp.data.dispatch('core/editor');
+				 if (dispatch && dispatch.editPost) {
+					 var currentTerms = value ? [parseInt(value)] : [];
+					 dispatch.editPost({
+						 weave_team_role: currentTerms
+					 });
 				 }
 			 }
 
-			 // Load settings if available
+			 // Load settings if available, with fallbacks for new posts
 			 var fieldSettings = {};
 			 var taxonomySettings = {};
  
 			 if (window.weaveTeamMemberData !== undefined) {
-				 if (attributes.position === '' && attributes.qualification === '' && attributes.phone === '' && attributes.email === '') {
+				 // Only load initial data once, don't override user changes
+				 var shouldLoadInitialData = (
+					 attributes.position === '' && 
+					 attributes.qualification === '' && 
+					 attributes.phone === '' && 
+					 attributes.email === '' &&
+					 attributes.selectedLocation === '' &&
+					 attributes.selectedRole === ''
+				 );
+				 
+				 				 if (shouldLoadInitialData) {
 					 setAttributes({
 						 position: window.weaveTeamMemberData.position || '',
 						 qualification: window.weaveTeamMemberData.qualification || '',
@@ -119,13 +141,26 @@
 						 selectedRole: window.weaveTeamMemberData.selectedRole || ''
 					 });
 				 }
- 
+				 
 				 fieldSettings = window.weaveTeamMemberData.fieldSettings || {};
 				 taxonomySettings = window.weaveTeamMemberData.taxonomySettings || {};
+			 } else {
+				 // Fallback for new posts - field settings should always come from PHP
+				 // but this provides a safety fallback if PHP data isn't loaded
+				 fieldSettings = {
+					 position: { enabled: true, label: 'Position:', placeholder: 'Enter position...' },
+					 qualification: { enabled: true, label: 'Qualification:', placeholder: 'Enter qualifications...' },
+					 phone: { enabled: true, label: 'Phone:', placeholder: 'Enter phone number...' },
+					 email: { enabled: true, label: 'Email:', placeholder: 'Enter email address...' }
+				 };
+				 taxonomySettings = {
+					 location: { enabled: true, label: 'Locations', singular: 'Location' },
+					 role: { enabled: true, label: 'Job Roles', singular: 'Job Role' }
+				 };
 			 }
  
 			 // Sync with WP Featured Image
-			 const [postFeaturedImageId, setPostFeaturedImageId] = useEntityProp('postType', 'post', 'featured_media');
+			 const [postFeaturedImageId, setPostFeaturedImageId] = useEntityProp('postType', 'weave_team', 'featured_media');
  
 			 useEffect(() => {
 				 if (postFeaturedImageId && attributes.featuredImageId !== postFeaturedImageId) {
@@ -173,39 +208,134 @@
 				 setPostFeaturedImageId(0);
 			 }
  
-			 // Load taxonomy terms for dropdowns
+			 // Load taxonomy terms for dropdowns with loading states
 			 var locations = useSelect((select) => {
 				 if (!taxonomySettings.location || !taxonomySettings.location.enabled) {
 					 return [];
 				 }
-				 return select('core').getEntityRecords('taxonomy', 'weave_team_location', { per_page: -1 });
-			 }, [taxonomySettings]);
+				 try {
+					 var locationTerms = select('core').getEntityRecords('taxonomy', 'weave_team_location', { per_page: -1 });
+					 return locationTerms || [];
+				 } catch (error) {
+					 console.error('Error loading location terms:', error);
+					 return [];
+				 }
+			 }, [taxonomySettings.location && taxonomySettings.location.enabled]);
  
 			 var jobRoles = useSelect((select) => {
 				 if (!taxonomySettings.role || !taxonomySettings.role.enabled) {
 					 return [];
 				 }
-				 return select('core').getEntityRecords('taxonomy', 'weave_team_role', { per_page: -1 });
-			 }, [taxonomySettings]);
+				 try {
+					 var roleTerms = select('core').getEntityRecords('taxonomy', 'weave_team_role', { per_page: -1 });
+					 return roleTerms || [];
+				 } catch (error) {
+					 console.error('Error loading role terms:', error);
+					 return [];
+				 }
+			 }, [taxonomySettings.role && taxonomySettings.role.enabled]);
+			 
+			 // Get loading states
+			 var locationsLoading = useSelect((select) => {
+				 if (!taxonomySettings.location || !taxonomySettings.location.enabled) {
+					 return false;
+				 }
+				 return select('core').isResolving('getEntityRecords', ['taxonomy', 'weave_team_location', { per_page: -1 }]);
+			 }, [taxonomySettings.location && taxonomySettings.location.enabled]);
+			 
+			 var rolesLoading = useSelect((select) => {
+				 if (!taxonomySettings.role || !taxonomySettings.role.enabled) {
+					 return false;
+				 }
+				 return select('core').isResolving('getEntityRecords', ['taxonomy', 'weave_team_role', { per_page: -1 }]);
+			 }, [taxonomySettings.role && taxonomySettings.role.enabled]);
  
 			 function getLocationOptions() {
+				 if (locationsLoading) {
+					 return [{ label: 'Loading locations...', value: '', disabled: true }];
+				 }
+				 
 				 var options = [{ label: 'Select Location', value: '' }];
-				 if (locations) {
+				 if (locations && locations.length > 0) {
 					 locations.forEach(function (location) {
 						 options.push({ label: location.name, value: location.id.toString() });
 					 });
+				 } else if (!locationsLoading) {
+					 options.push({ label: 'No locations available', value: '', disabled: true });
 				 }
 				 return options;
 			 }
  
 			 function getRoleOptions() {
-				 var options = [{ label: 'Select Job Role', value: '' }];
-				 if (jobRoles) {
+				 var taxonomyLabel = (taxonomySettings.role && taxonomySettings.role.singular) ? taxonomySettings.role.singular : 'Job Role';
+				 
+				 if (rolesLoading) {
+					 return [{ label: 'Loading ' + taxonomyLabel.toLowerCase() + 's...', value: '', disabled: true }];
+				 }
+				 
+				 var options = [{ label: 'Select ' + taxonomyLabel, value: '' }];
+				 if (jobRoles && jobRoles.length > 0) {
 					 jobRoles.forEach(function (role) {
 						 options.push({ label: role.name, value: role.id.toString() });
 					 });
+				 } else if (!rolesLoading) {
+					 options.push({ label: 'No ' + taxonomyLabel.toLowerCase() + 's available', value: '', disabled: true });
 				 }
+				 
 				 return options;
+			 }
+
+			 // Helper function to render enabled fields only
+			 function renderField(fieldName, fieldType, label, value, onChange) {
+				 // Check if field is explicitly disabled via filter
+				 if (fieldSettings && 
+					 fieldSettings[fieldName] && 
+					 fieldSettings[fieldName].hasOwnProperty('enabled') && 
+					 fieldSettings[fieldName].enabled === false) {
+					 return null;
+				 }
+				 
+				 var fieldLabel = (fieldSettings && fieldSettings[fieldName] && fieldSettings[fieldName].label) || label;
+				 var fieldPlaceholder = (fieldSettings && fieldSettings[fieldName] && fieldSettings[fieldName].placeholder) || '';
+				 
+				 return createElement(TextControl, {
+					 label: fieldLabel,
+					 type: fieldType || 'text',
+					 value: value || '',
+					 placeholder: fieldPlaceholder,
+					 onChange: onChange
+				 });
+			 }
+
+			 // Helper function to render taxonomy select
+			 function renderTaxonomySelect(taxonomyName, label, value, onChange, options) {
+				 if (!taxonomySettings[taxonomyName] || !taxonomySettings[taxonomyName].enabled) {
+					 return null;
+				 }
+				 
+				 var taxLabel = (taxonomySettings[taxonomyName] && taxonomySettings[taxonomyName].label) || label;
+				 
+				 // Ensure value is a string to prevent React warnings
+				 var safeValue = value ? String(value) : '';
+				 
+				 // Get options with error handling
+				 var selectOptions;
+				 try {
+					 selectOptions = options();
+				 } catch (error) {
+					 console.error('Error getting taxonomy options for ' + taxonomyName + ':', error);
+					 selectOptions = [{ label: 'Error loading options', value: '', disabled: true }];
+				 }
+				 
+				 return createElement(SelectControl, {
+					 label: taxLabel,
+					 value: safeValue,
+					 options: selectOptions,
+					 onChange: function(newValue) {
+						 // Ensure we're passing a string value
+						 onChange(newValue || '');
+					 }
+				 });
 			 }
  
 			 return createElement(
@@ -244,43 +374,16 @@
 						 )
 					 ),
  
-					 // Fields Section
+					 // Fields Section - Only render enabled fields
 					 createElement(
 						 'div',
 						 { className: 'team-member-fields' },
-						 createElement(TextControl, {
-							 label: 'Position',
-							 value: attributes.position,
-							 onChange: updatePosition
-						 }),
-						 createElement(TextControl, {
-							 label: 'Qualification',
-							 value: attributes.qualification,
-							 onChange: updateQualification
-						 }),
-						 createElement(TextControl, {
-							 label: 'Phone',
-							 value: attributes.phone,
-							 onChange: updatePhone
-						 }),
-						 createElement(TextControl, {
-							 label: 'Email',
-							 type: 'email',
-							 value: attributes.email,
-							 onChange: updateEmail
-						 }),
-						 createElement(SelectControl, {
-							 label: 'Location',
-							 value: attributes.selectedLocation,
-							 options: getLocationOptions(),
-							 onChange: updateLocation
-						 }),
-						 createElement(SelectControl, {
-							 label: 'Job Role',
-							 value: attributes.selectedRole,
-							 options: getRoleOptions(),
-							 onChange: updateRole
-						 })
+						 renderField('position', 'text', 'Position', attributes.position, updatePosition),
+						 renderField('qualification', 'text', 'Qualification', attributes.qualification, updateQualification),
+						 renderField('phone', 'text', 'Phone', attributes.phone, updatePhone),
+						 renderField('email', 'email', 'Email', attributes.email, updateEmail),
+						 renderTaxonomySelect('location', 'Location', attributes.selectedLocation, updateLocation, getLocationOptions),
+						 renderTaxonomySelect('role', 'Job Role', attributes.selectedRole, updateRole, getRoleOptions)
 					 )
 				 ),
 				 createElement(
@@ -289,57 +392,12 @@
 					 createElement(
 						 PanelBody,
 						 { title: 'Team Member Details' },
-						 createElement(
-							 TextControl,
-							 {
-								 label: 'Position',
-								 value: attributes.position,
-								 onChange: updatePosition
-							 }
-						 ),
-						 createElement(
-							 TextControl,
-							 {
-								 label: 'Qualification',
-								 value: attributes.qualification,
-								 onChange: updateQualification
-							 }
-						 ),
-						 createElement(
-							 TextControl,
-							 {
-								 label: 'Phone',
-								 value: attributes.phone,
-								 onChange: updatePhone
-							 }
-						 ),
-						 createElement(
-							 TextControl,
-							 {
-								 label: 'Email',
-								 type: 'email',
-								 value: attributes.email,
-								 onChange: updateEmail
-							 }
-						 ),
-						 createElement(
-							 SelectControl,
-							 {
-								 label: 'Location',
-								 value: attributes.selectedLocation,
-								 options: getLocationOptions(),
-								 onChange: updateLocation
-							 }
-						 ),
-						 createElement(
-							 SelectControl,
-							 {
-								 label: 'Job Role',
-								 value: attributes.selectedRole,
-								 options: getRoleOptions(),
-								 onChange: updateRole
-							 }
-						 )
+						 renderField('position', 'text', 'Position', attributes.position, updatePosition),
+						 renderField('qualification', 'text', 'Qualification', attributes.qualification, updateQualification),
+						 renderField('phone', 'text', 'Phone', attributes.phone, updatePhone),
+						 renderField('email', 'email', 'Email', attributes.email, updateEmail),
+						 renderTaxonomySelect('location', 'Location', attributes.selectedLocation, updateLocation, getLocationOptions),
+						 renderTaxonomySelect('role', 'Job Role', attributes.selectedRole, updateRole, getRoleOptions)
 					 )
 				 )
 			 );

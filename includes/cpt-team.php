@@ -3,7 +3,7 @@
  * Team Custom Post Type
  *
  * @package    Team_Member_Module
- * @version    1.0.0
+ * @version    1.0.2
  * @since      1.0.0
  */
 
@@ -115,7 +115,7 @@ if (!function_exists('weave_cpt_register_team')) {
 			'has_archive'        => $make_public,
 			'hierarchical'       => false,
 			'menu_icon'          => 'dashicons-groups',
-			'supports'           => array('title', 'editor', 'thumbnail', 'custom-fields'),
+			'supports'           => array('title', 'editor', 'thumbnail', 'custom-fields', 'page-attributes'),
 			'show_in_rest'       => true,
 			'show_in_nav_menus'  => $make_public,
 			'exclude_from_search'=> !$make_public,
@@ -297,9 +297,35 @@ function weave_register_team_meta_for_rest() {
 add_action('init', 'weave_register_team_meta_for_rest');
 
 /**
+ * Check if post has Team Member block
+ */
+function weave_post_has_team_member_block($post_id) {
+	$post = get_post($post_id);
+	if (!$post) {
+		return false;
+	}
+	
+	// Check if the post content contains our team member block
+	return has_block('weave-digital/team-member', $post);
+}
+
+/**
  * Add a custom meta box for team member information
+ * Only add if the post doesn't have the Team Member block to avoid duplication
  */
 function weave_add_team_meta_boxes() {
+	// Get the current post ID
+	$post_id = get_the_ID();
+	if (!$post_id) {
+		global $post;
+		$post_id = $post ? $post->ID : 0;
+	}
+	
+	// Don't add meta box if the post has the Team Member block
+	if ($post_id && weave_post_has_team_member_block($post_id)) {
+		return;
+	}
+	
 	// Don't add meta box if no fields are enabled
 	$field_settings = weave_team_get_field_settings();
 	$has_enabled_fields = false;
@@ -325,6 +351,28 @@ function weave_add_team_meta_boxes() {
 	);
 }
 add_action('add_meta_boxes', 'weave_add_team_meta_boxes');
+
+/**
+ * Hide taxonomy meta boxes when using the Team Member block
+ */
+function weave_hide_taxonomy_meta_boxes() {
+	// Get the current post ID
+	$post_id = get_the_ID();
+	if (!$post_id) {
+		global $post;
+		$post_id = $post ? $post->ID : 0;
+	}
+	
+	// Hide taxonomy meta boxes if the post has the Team Member block
+	if ($post_id && weave_post_has_team_member_block($post_id)) {
+		remove_meta_box('weave_team_locationdiv', 'weave_team', 'side');
+		remove_meta_box('weave_team_rolediv', 'weave_team', 'side');
+		// Also remove the hierarchical versions
+		remove_meta_box('weave_team_locationdiv', 'weave_team', 'normal');
+		remove_meta_box('weave_team_rolediv', 'weave_team', 'normal');
+	}
+}
+add_action('add_meta_boxes', 'weave_hide_taxonomy_meta_boxes', 20);
 
 /**
  * Meta box callback function
@@ -406,34 +454,44 @@ function weave_add_team_columns($columns) {
 	
 	$new_columns = array();
 	
-	foreach($columns as $key => $value) {
-		if ($key === 'title') {
-			$new_columns[$key] = $value;
-			
-			// Only add enabled fields
-			if (isset($field_settings['position']) && $field_settings['position']['enabled']) {
-				$new_columns['position'] = __('Position', 'weave-team-members-cpt');
-			}
-			
-			if (isset($field_settings['qualification']) && $field_settings['qualification']['enabled']) {
-				$new_columns['qualification'] = __('Qualification', 'weave-team-members-cpt');
-			}
-		} 
-		elseif ($key === 'taxonomy-weave_team_location' || $key === 'taxonomy-weave_team_role') {
-			// Skip taxonomies for now, we'll add enabled ones later
-		}
-		else {
-			$new_columns[$key] = $value;
-		}
+	// Add checkbox first (if it exists)
+	if (isset($columns['cb'])) {
+		$new_columns['cb'] = $columns['cb'];
 	}
 	
-	// Add the taxonomy columns back at the end (only if enabled)
+	// Add featured image first (150px x 150px)
+	$new_columns['featured_image'] = __('Image', 'weave-team-members-cpt');
+	
+	// Add title
+	if (isset($columns['title'])) {
+		$new_columns['title'] = $columns['title'];
+	}
+	
+	// Add enabled fields
+	if (isset($field_settings['position']) && $field_settings['position']['enabled']) {
+		$new_columns['position'] = __('Position', 'weave-team-members-cpt');
+	}
+	
+	if (isset($field_settings['qualification']) && $field_settings['qualification']['enabled']) {
+		$new_columns['qualification'] = __('Qualification', 'weave-team-members-cpt');
+	}
+	
+	// Add enabled taxonomies BEFORE date
 	if (isset($taxonomy_settings['location']['enabled']) && $taxonomy_settings['location']['enabled']) {
 		$new_columns['taxonomy-weave_team_location'] = $taxonomy_settings['location']['label'];
 	}
 	
 	if (isset($taxonomy_settings['role']['enabled']) && $taxonomy_settings['role']['enabled']) {
 		$new_columns['taxonomy-weave_team_role'] = $taxonomy_settings['role']['label'];
+	}
+	
+	// Add remaining columns (date, etc.)
+	foreach($columns as $key => $value) {
+		if (!isset($new_columns[$key]) && 
+			$key !== 'taxonomy-weave_team_location' && 
+			$key !== 'taxonomy-weave_team_role') {
+			$new_columns[$key] = $value;
+		}
 	}
 	
 	return $new_columns;
@@ -446,6 +504,19 @@ add_filter('manage_weave_team_posts_columns', 'weave_add_team_columns');
 function weave_display_team_columns($column, $post_id) {
 	// Get field settings
 	$field_settings = weave_team_get_field_settings();
+	
+	if ($column === 'featured_image') {
+		$thumbnail_id = get_post_thumbnail_id($post_id);
+		if ($thumbnail_id) {
+			$thumbnail = wp_get_attachment_image($thumbnail_id, array(150, 150), true, array(
+				'style' => 'width: 150px; height: 150px; object-fit: cover; border-radius: 4px;'
+			));
+			echo $thumbnail;
+		} else {
+			echo '<div style="width: 150px; height: 150px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px;">No Image</div>';
+		}
+		return;
+	}
 	
 	$fields = array('position', 'qualification');
 	
@@ -519,9 +590,14 @@ add_filter('enter_title_here', 'weave_team_change_title_text');
 /**
  * Auto-insert the Team Member block into new team posts
  */
-function weave_auto_insert_team_member_block($post) {
+function weave_auto_insert_team_member_block($post_id, $post) {
+	// Ensure we have a valid post object
+	if (!$post || !is_object($post)) {
+		$post = get_post($post_id);
+	}
+	
 	// Only proceed for our custom post type and new posts
-	if ($post->post_type !== 'weave_team' || $post->post_content !== '') {
+	if (!$post || $post->post_type !== 'weave_team' || $post->post_content !== '') {
 		return;
 	}
 	
@@ -534,7 +610,7 @@ function weave_auto_insert_team_member_block($post) {
 		'post_content' => $block_content,
 	));
 }
-add_action('wp_insert_post', 'weave_auto_insert_team_member_block', 10, 1);
+add_action('wp_insert_post', 'weave_auto_insert_team_member_block', 10, 2);
 
 /**
  * Add a template for the Team Member post type
@@ -555,6 +631,17 @@ function weave_register_team_member_template() {
 	}
 }
 add_action('init', 'weave_register_team_member_template', 11); // Run after CPT registration
+
+/**
+ * Ensure Simple Page Ordering plugin compatibility
+ */
+function weave_team_enable_simple_page_ordering($sortable, $post_type) {
+	if ($post_type === 'weave_team') {
+		return true;
+	}
+	return $sortable;
+}
+add_filter('simple_page_ordering_is_sortable', 'weave_team_enable_simple_page_ordering', 10, 2);
 
 /**
  * Include the Team Member block registration

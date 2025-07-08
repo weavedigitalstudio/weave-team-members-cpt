@@ -45,3 +45,67 @@
 #adminmenu .menu-icon-weave_team div.wp-menu-image::before {
 	content: '\f307'; /* Uses Dashicons 'groups' icon */
 }
+
+/**
+ * Admin Styles for Team Members
+ *
+ * @package Weave_Team_Members_CPT
+ * @version 1.0.0
+ */
+
+/* Featured image column styling */
+.widefat .column-featured_image {
+	width: 150px !important;
+	max-width: 150px !important;
+	text-align: center;
+	padding: 8px 4px !important;
+}
+
+.column-featured_image img {
+	max-width: 150px;
+	height: auto;
+	border-radius: 4px;
+	border: 1px solid #ddd;
+}
+
+/* Ensure the column header is also constrained */
+.widefat thead th.column-featured_image,
+.widefat tfoot th.column-featured_image {
+	width: 150px !important;
+	max-width: 150px !important;
+}
+
+/* Groups and Location columns */
+.widefat .column-taxonomy-weave_team_role,
+.widefat .column-taxonomy-weave_team_location {
+	width: 150px;
+}
+
+/* Position column */
+.widefat .column-position {
+	width: 200px;
+}
+
+/* Make sure table layout is proper */
+.wp-admin .widefat {
+	table-layout: fixed;
+}
+
+/* Specific targeting for team member admin table */
+.wp-admin .wp-list-table.widefat.fixed.posts {
+	table-layout: fixed;
+}
+
+/* Force the image column to stay narrow */
+.wp-admin .wp-list-table .column-featured_image {
+	width: 150px !important;
+	max-width: 150px !important;
+	overflow: hidden;
+}
+
+/* Admin column responsiveness */
+@media screen and (max-width: 782px) {
+	.widefat .column-featured_image {
+		display: none;
+	}
+}

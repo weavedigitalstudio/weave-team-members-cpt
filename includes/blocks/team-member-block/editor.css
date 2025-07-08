@@ -31,12 +31,34 @@
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 15px;
+	align-items: flex-start;
+	margin-top: 16px;
 }
 
-/* Field labels */
-.team-member-fields .components-base-control .components-base-control__label {
-	font-weight: 500;
-	font-size: 14px;
+/* Reset any default margins that might affect alignment */
+.team-member-fields > * {
+	margin-top: 0 !important;
+	margin-bottom: 0 !important;
+}
+
+/* Ensure consistent field container heights */
+.team-member-fields .components-base-control {
+	margin-bottom: 0 !important;
+}
+
+/* Field labels - ensure consistent styling for all field types */
+.team-member-fields .components-base-control .components-base-control__label,
+.team-member-fields .components-text-control .components-base-control__label,
+.team-member-fields .components-select-control .components-base-control__label,
+.team-member-fields .components-text-control__label,
+.team-member-fields .components-select-control__label {
+	font-weight: 500 !important;
+	font-size: 14px !important;
+	margin-bottom: 8px !important;
+	display: block !important;
+	text-transform: uppercase !important;
+	letter-spacing: 0.5px !important;
+	color: #1e1e1e !important;
 }
 
 /* Field inputs */
@@ -44,6 +66,31 @@
 .team-member-fields .components-select-control__input {
 	font-size: 15px;
 	padding: 8px 12px;
+	width: 100%;
+	height: 40px;
+	border: 1px solid #949494;
+	border-radius: 2px;
+}
+
+/* Ensure both field types have consistent spacing */
+.team-member-fields .components-text-control,
+.team-member-fields .components-select-control {
+	margin-bottom: 16px !important;
+	display: flex !important;
+	flex-direction: column !important;
+}
+
+/* Force consistent label styling across all field types */
+.team-member-fields label,
+.team-member-fields .components-text-control label,
+.team-member-fields .components-select-control label {
+	font-weight: 500 !important;
+	font-size: 14px !important;
+	margin-bottom: 8px !important;
+	display: block !important;
+	text-transform: uppercase !important;
+	letter-spacing: 0.5px !important;
+	color: #1e1e1e !important;
 }
 
 .team-member-image-section {

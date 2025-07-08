@@ -101,40 +101,64 @@ function weave_render_team_member_block($attributes, $content) {
 function weave_load_team_member_block_data() {
 	global $post;
 	
-	// Only proceed for our custom post type on edit screens
-	if (!is_admin() || empty($post) || $post->post_type !== 'weave_team') {
+	// Only proceed on admin screens
+	if (!is_admin()) {
 		return;
 	}
 	
-	// Get meta values
+	// Get current screen to check post type
+	$screen = get_current_screen();
+	if (!$screen || $screen->post_type !== 'weave_team') {
+		return;
+	}
+	
+	// Also check if we're on the block editor for this post type
+	if (!in_array($screen->base, array('post', 'post-new'))) {
+		return;
+	}
+	
+	// For new posts, $post might be empty, so handle that case
+	$post_id = !empty($post) ? $post->ID : 0;
+	
+	// Get meta values (empty for new posts)
 	$meta_values = array(
-		'position' => get_post_meta($post->ID, '_weave_team_position', true),
-		'qualification' => get_post_meta($post->ID, '_weave_team_qualification', true),
-		'phone' => get_post_meta($post->ID, '_weave_team_phone', true),
-		'email' => get_post_meta($post->ID, '_weave_team_email', true)
+		'position' => $post_id ? get_post_meta($post_id, '_weave_team_position', true) : '',
+		'qualification' => $post_id ? get_post_meta($post_id, '_weave_team_qualification', true) : '',
+		'phone' => $post_id ? get_post_meta($post_id, '_weave_team_phone', true) : '',
+		'email' => $post_id ? get_post_meta($post_id, '_weave_team_email', true) : ''
 	);
 	
-	// Get taxonomy terms
+	// Get taxonomy terms (empty for new posts)
 	$taxonomy_settings = weave_team_get_taxonomy_settings();
 	
 	if (!empty($taxonomy_settings['location']['enabled'])) {
-		$location_terms = wp_get_object_terms($post->ID, 'weave_team_location');
-		$location_id = !empty($location_terms) ? $location_terms[0]->term_id : '';
+		$location_terms = $post_id ? wp_get_object_terms($post_id, 'weave_team_location') : array();
+		$location_id = '';
+		
+		if (!is_wp_error($location_terms) && !empty($location_terms) && isset($location_terms[0]->term_id)) {
+			$location_id = $location_terms[0]->term_id;
+		}
+		
 		$meta_values['selectedLocation'] = $location_id;
 	}
 	
 	if (!empty($taxonomy_settings['role']['enabled'])) {
-		$role_terms = wp_get_object_terms($post->ID, 'weave_team_role');
-		$role_id = !empty($role_terms) ? $role_terms[0]->term_id : '';
+		$role_terms = $post_id ? wp_get_object_terms($post_id, 'weave_team_role') : array();
+		$role_id = '';
+		
+		if (!is_wp_error($role_terms) && !empty($role_terms) && isset($role_terms[0]->term_id)) {
+			$role_id = $role_terms[0]->term_id;
+		}
+		
 		$meta_values['selectedRole'] = $role_id;
 	}
 	
-	// Add settings for fields and taxonomies
+	// Always add settings for fields and taxonomies (critical for filtering)
 	$meta_values['fieldSettings'] = weave_team_get_field_settings();
 	$meta_values['taxonomySettings'] = $taxonomy_settings;
 	
-	// Get featured image info
-	$featured_image_id = get_post_thumbnail_id($post->ID);
+	// Get featured image info (none for new posts)
+	$featured_image_id = $post_id ? get_post_thumbnail_id($post_id) : 0;
 	if ($featured_image_id) {
 		$meta_values['featuredImageId'] = $featured_image_id;
 		$featured_image_url = wp_get_attachment_image_src($featured_image_id, 'full');
@@ -143,8 +167,13 @@ function weave_load_team_member_block_data() {
 		}
 	}
 	
-	// Enqueue the script with the data
-	wp_localize_script('weave-team-member-block', 'weaveTeamMemberData', $meta_values);
+	// Always enqueue the script with settings data - critical for field filtering to work
+	// Ensure the script is enqueued before localizing data
+	if (wp_script_is('weave-team-member-block', 'registered')) {
+		wp_enqueue_script('weave-team-member-block');
+		wp_enqueue_style('weave-team-member-block-editor');
+		wp_localize_script('weave-team-member-block', 'weaveTeamMemberData', $meta_values);
+	}
 }
 
 /**
@@ -155,26 +184,92 @@ function weave_save_team_member_block_data($post_id, $post) {
 		return;
 	}
 
+	// Skip if this is an autosave
+	if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+		return;
+	}
+
+	// Check if user has permission to edit the post
+	if (!current_user_can('edit_post', $post_id)) {
+		return;
+	}
+
 	$blocks = parse_blocks($post->post_content);
 	foreach ($blocks as $block) {
 		if ($block['blockName'] === 'weave-digital/team-member') {
 			$attrs = $block['attrs'];
+			
+			// Get field settings to check which fields are enabled
+			$field_settings = weave_team_get_field_settings();
+			$taxonomy_settings = weave_team_get_taxonomy_settings();
 
-			// Save text fields
+			// Save text fields only if they're enabled
 			$fields = array('position', 'qualification', 'phone', 'email');
 			foreach ($fields as $field) {
-				if (isset($attrs[$field])) {
-					update_post_meta($post_id, '_weave_team_' . $field, sanitize_text_field($attrs[$field]));
+				if (isset($attrs[$field]) && 
+					isset($field_settings[$field]) && 
+					$field_settings[$field]['enabled']) {
+					
+					// Sanitize based on field type
+					if ($field === 'email') {
+						$value = sanitize_email($attrs[$field]);
+					} else {
+						$value = sanitize_text_field($attrs[$field]);
+					}
+					
+					update_post_meta($post_id, '_weave_team_' . $field, $value);
 				}
 			}
 
-			// Save taxonomies
-			if (!empty($attrs['selectedLocation'])) {
-				wp_set_object_terms($post_id, intval($attrs['selectedLocation']), 'weave_team_location');
+			// Save taxonomies only if they're enabled
+			if (isset($attrs['selectedLocation']) && 
+				!empty($attrs['selectedLocation']) && 
+				isset($taxonomy_settings['location']) && 
+				$taxonomy_settings['location']['enabled']) {
+				
+				$location_id = intval($attrs['selectedLocation']);
+				
+				// Verify the term exists before setting it
+				if ($location_id > 0 && term_exists($location_id, 'weave_team_location')) {
+					$result = wp_set_object_terms($post_id, $location_id, 'weave_team_location');
+					if (is_wp_error($result)) {
+						error_log('Failed to set location term for post ' . $post_id . ': ' . $result->get_error_message());
+					}
+				}
+			} elseif (isset($attrs['selectedLocation']) && 
+					  empty($attrs['selectedLocation']) && 
+					  isset($taxonomy_settings['location']) && 
+					  $taxonomy_settings['location']['enabled']) {
+				// Clear the taxonomy if empty value is set
+				$result = wp_set_object_terms($post_id, array(), 'weave_team_location');
+				if (is_wp_error($result)) {
+					error_log('Failed to clear location terms for post ' . $post_id . ': ' . $result->get_error_message());
+				}
 			}
 			
-			if (!empty($attrs['selectedRole'])) {
-				wp_set_object_terms($post_id, intval($attrs['selectedRole']), 'weave_team_role');
+			if (isset($attrs['selectedRole']) && 
+				!empty($attrs['selectedRole']) && 
+				isset($taxonomy_settings['role']) && 
+				$taxonomy_settings['role']['enabled']) {
+				
+				$role_id = intval($attrs['selectedRole']);
+				
+				// Verify the term exists before setting it
+				if ($role_id > 0 && term_exists($role_id, 'weave_team_role')) {
+					$result = wp_set_object_terms($post_id, $role_id, 'weave_team_role');
+					if (is_wp_error($result)) {
+						error_log('Failed to set role term for post ' . $post_id . ': ' . $result->get_error_message());
+					}
+				}
+			} elseif (isset($attrs['selectedRole']) && 
+					  empty($attrs['selectedRole']) && 
+					  isset($taxonomy_settings['role']) && 
+					  $taxonomy_settings['role']['enabled']) {
+				// Clear the taxonomy if empty value is set
+				$result = wp_set_object_terms($post_id, array(), 'weave_team_role');
+				if (is_wp_error($result)) {
+					error_log('Failed to clear role terms for post ' . $post_id . ': ' . $result->get_error_message());
+				}
 			}
 
 			// Save featured image
@@ -189,3 +284,95 @@ function weave_save_team_member_block_data($post_id, $post) {
 	}
 }
 add_action('save_post', 'weave_save_team_member_block_data', 10, 2);
+
+/**
+ * Sync taxonomy changes from sidebar to block
+ * This ensures that if someone uses the taxonomy meta boxes, the block stays in sync
+ */
+function weave_sync_taxonomy_to_block($post_id) {
+	// Only process our post type
+	if (get_post_type($post_id) !== 'weave_team') {
+		return;
+	}
+	
+	// Skip if this is an autosave
+	if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+		return;
+	}
+
+	// Check if user has permission to edit the post
+	if (!current_user_can('edit_post', $post_id)) {
+		return;
+	}
+
+	// Only sync if the post has the Team Member block
+	if (!weave_post_has_team_member_block($post_id)) {
+		return;
+	}
+
+	$post = get_post($post_id);
+	if (!$post) {
+		return;
+	}
+
+	// Get current taxonomy terms
+	$taxonomy_settings = weave_team_get_taxonomy_settings();
+	$needs_update = false;
+	$blocks = parse_blocks($post->post_content);
+	
+	foreach ($blocks as $block_index => $block) {
+		if ($block['blockName'] === 'weave-digital/team-member') {
+			$attrs = $block['attrs'];
+			
+			// Sync location taxonomy
+			if (isset($taxonomy_settings['location']) && $taxonomy_settings['location']['enabled']) {
+				$location_terms = wp_get_object_terms($post_id, 'weave_team_location');
+				$location_id = '';
+				
+				if (!is_wp_error($location_terms) && !empty($location_terms) && isset($location_terms[0]->term_id)) {
+					$location_id = strval($location_terms[0]->term_id);
+				}
+				
+				if (!isset($attrs['selectedLocation']) || $attrs['selectedLocation'] !== $location_id) {
+					$attrs['selectedLocation'] = $location_id;
+					$needs_update = true;
+				}
+			}
+			
+			// Sync role taxonomy
+			if (isset($taxonomy_settings['role']) && $taxonomy_settings['role']['enabled']) {
+				$role_terms = wp_get_object_terms($post_id, 'weave_team_role');
+				$role_id = '';
+				
+				if (!is_wp_error($role_terms) && !empty($role_terms) && isset($role_terms[0]->term_id)) {
+					$role_id = strval($role_terms[0]->term_id);
+				}
+				
+				if (!isset($attrs['selectedRole']) || $attrs['selectedRole'] !== $role_id) {
+					$attrs['selectedRole'] = $role_id;
+					$needs_update = true;
+				}
+			}
+			
+			// Update the block if needed
+			if ($needs_update) {
+				$blocks[$block_index]['attrs'] = $attrs;
+				$updated_content = serialize_blocks($blocks);
+				
+				// Remove the hook to prevent infinite loop
+				remove_action('save_post', 'weave_sync_taxonomy_to_block', 15);
+				
+				wp_update_post(array(
+					'ID' => $post_id,
+					'post_content' => $updated_content,
+				));
+				
+				// Re-add the hook
+				add_action('save_post', 'weave_sync_taxonomy_to_block', 15);
+			}
+			
+			break; // Process only the first instance of the block
+		}
+	}
+}
+add_action('save_post', 'weave_sync_taxonomy_to_block', 15);

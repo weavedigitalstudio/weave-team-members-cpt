@@ -3,7 +3,7 @@
  * Plugin Name: Weave Team Members CPT
  * Plugin URI: https://github.com/weavedigitalstudio/weave-team-members-cpt
  * Description: A lightweight, modular Team Members CPT for Weave websites
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: Weave Digital
  * Author URI: https://weave.co.nz
  * Text Domain: weave-team-members-cpt
@@ -14,7 +14,7 @@
  * Team Member Module
  *
  * @package    Team_Member_Module
- * @version    1.0.0
+ * @version    1.2.0
  * @since      1.0.0
  * @author     Weave Digital
  */
@@ -25,9 +25,10 @@ if (!defined('WPINC')) {
 }
 
 // Define constants
-define('WEAVE_TEAM_VERSION', '1.0.0');
+define('WEAVE_TEAM_VERSION', '1.2.0');
 define('WEAVE_TEAM_DIR', plugin_dir_path(__FILE__));
 define('WEAVE_TEAM_URL', plugin_dir_url(__FILE__));
+define('WEAVE_TEAM_MEMBERS_PLUGIN_FILE', __FILE__);
 
 /**
  * Initialize the module
@@ -35,6 +36,11 @@ define('WEAVE_TEAM_URL', plugin_dir_url(__FILE__));
 function weave_team_init() {
 	// Include the required files
 	require_once WEAVE_TEAM_DIR . 'includes/cpt-team.php';
+	
+	// Include GitHub updater for automatic updates
+	if (is_admin()) {
+		require_once WEAVE_TEAM_DIR . 'includes/github-updater.php';
+	}
 	
 	// Register block assets
 	add_action('init', 'weave_register_block_assets', 5);
