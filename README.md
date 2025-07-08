@@ -1,5 +1,3 @@
-![Weave Team CPT](https://weave-hk-github.b-cdn.net/weave/plugin-header.png)
-
 # Weave Team Members Plugin
 
 A simple, lightweight WordPress plugin to manage team members. It adds a custom post type with built-in meta fields and taxonomies—no need for ACF. Comes with a block-based editor for entering team member details easily. Built for internal use by Weave Digital Studio and HumanKind Funeral Websites but shared for anyone to use.
