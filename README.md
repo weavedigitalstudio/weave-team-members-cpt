@@ -48,35 +48,29 @@ This plugin includes automatic update functionality that checks for new releases
 
 By default, team members are only visible in the admin area and not publicly accessible on the front-end. This is ideal for sites that want to use team member data within templates, Beaver Themer or blocks, but don't want individual team member pages.
 
+**Default Behavior:** The plugin is optimised for page builders like Beaver Builder and Beaver Themer by default. Team members are queryable but don't have individual pages or archives, maintaining privacy while allowing page builders to display them.
+
 If you'd like to enable public team member pages and archives, you can use this filter in a custom plugin, mu-plugin, or your theme's functions.php file:
 
 ```php
 /**
- * Enable public pages for team members
- */
-add_filter('weave_team_public', '__return_true');
-```
-
-This will enable:
-- Individual team member pages
-- Team archive page
-- Inclusion in search results
-- Ability to include team members in navigation menus
-
-You can also modify specific arguments of the post type with:
-
-```php
-/**
- * Customize team post type settings
+ * Enable public pages and archives for team members
  */
 add_filter('weave_team_post_type_args', function($args) {
-	// Modify specific arguments
-	$args['has_archive'] = true;
-	$args['rewrite'] = array('slug' => 'our-team');
+	$args['has_archive'] = true;                    // Enable team archive page
+	$args['rewrite'] = array('slug' => 'our-team'); // Enable individual post URLs
+	$args['show_in_nav_menus'] = true;              // Show in navigation menus
+	$args['exclude_from_search'] = false;           // Include in search results
 	
 	return $args;
 });
 ```
+
+This will enable:
+- Individual team member pages (e.g., yoursite.com/our-team/john-smith)
+- Team archive page (e.g., yoursite.com/our-team)
+- Inclusion in search results
+- Ability to include team members in navigation menus
 
 After adding either of these filters, remember to flush permalinks by visiting **Settings > Permalinks** in your WordPress admin.
 
@@ -419,7 +413,7 @@ The plugin stores data in these meta fields:
 - **Name:** `weave_team`
 - **Supports:** Title, Editor, Thumbnail, Custom Fields, Page Attributes
 - **REST API:** Enabled
-- **Public:** Disabled by default (use `weave_team_public` filter to enable)
+- **Public:** Queryable for page builders but no individual pages/archives by default (use `weave_team_post_type_args` filter to customise)
 
 ### GitHub Integration
 

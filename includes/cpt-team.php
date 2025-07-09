@@ -99,26 +99,24 @@ if (!function_exists('weave_cpt_register_team')) {
 			'use_featured_image'    => __('Use as team member image', 'weave-team-members-cpt'),
 		);
 
- 	   	// Set default to false, but allow filtering
-		$make_public = apply_filters('weave_team_public', false);
-
+ 		// Default settings optimised for page builders while maintaining privacy
 		$args = array(
 			'labels'             => $labels,
-			'public'             => $make_public,
-			'publicly_queryable' => $make_public,
+			'public'             => true,              // Allow querying for page builders
+			'publicly_queryable' => true,              // Allow querying for page builders
 			'show_ui'            => true,
 			'show_in_menu'       => true,
 			'menu_position'      => 6,
-			'query_var'          => $make_public,
-			'rewrite'            => $make_public ? array('slug' => 'team') : false,
+			'query_var'          => true,
+			'rewrite'            => false,             // No individual post URLs
 			'capability_type'    => 'post',
-			'has_archive'        => $make_public,
+			'has_archive'        => false,             // No archive page
 			'hierarchical'       => false,
 			'menu_icon'          => 'dashicons-groups',
 			'supports'           => array('title', 'editor', 'thumbnail', 'custom-fields', 'page-attributes'),
 			'show_in_rest'       => true,
-			'show_in_nav_menus'  => $make_public,
-			'exclude_from_search'=> !$make_public,
+			'show_in_nav_menus'  => false,             // Don't show in navigation menus
+			'exclude_from_search'=> true,              // Exclude from search results
 		);
 	
 		// Allow additional filtering of all args
